@@ -1,7 +1,8 @@
-cmake_minimum_required(VERSION 2.8.12 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
 
 project(minisat)
 cmake_policy(SET CMP0042 NEW)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 #--------------------------------------------------------------------------------------------------
 # Configurable options:
 
@@ -39,10 +40,10 @@ add_definitions(-D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS)
 # Build Targets:
 
 set(MINISAT_LIB_SOURCES
-    minisat/utils/Options.cc
-    minisat/utils/System.cc
-    minisat/core/Solver.cc
-    minisat/simp/SimpSolver.cc)
+    src/utils/Options.cc
+    src/utils/System.cc
+    src/core/Solver.cc
+    src/simp/SimpSolver.cc)
 
 add_library(minisat-lib-static STATIC ${MINISAT_LIB_SOURCES})
 add_library(minisat-lib-shared SHARED ${MINISAT_LIB_SOURCES})
@@ -50,8 +51,8 @@ add_library(minisat-lib-shared SHARED ${MINISAT_LIB_SOURCES})
 target_link_libraries(minisat-lib-shared ${ZLIB_LIBRARY})
 target_link_libraries(minisat-lib-static ${ZLIB_LIBRARY})
 
-add_executable(minisat_core minisat/core/Main.cc)
-add_executable(minisat_simp minisat/simp/Main.cc)
+add_executable(minisat_core src/core/Main.cc)
+add_executable(minisat_simp src/simp/Main.cc)
 
 if(STATIC_BINARIES)
   target_link_libraries(minisat_core minisat-lib-static)
@@ -78,6 +79,6 @@ install(TARGETS minisat-lib-static minisat-lib-shared minisat_core minisat_simp
         LIBRARY DESTINATION lib
         ARCHIVE DESTINATION lib)
 
-install(DIRECTORY minisat/mtl minisat/utils minisat/core minisat/simp
+install(DIRECTORY src/mtl src/utils src/core src/simp
         DESTINATION include/minisat
         FILES_MATCHING PATTERN "*.h")
