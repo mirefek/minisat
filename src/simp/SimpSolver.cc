@@ -19,8 +19,10 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 **************************************************************************************************/
 
 #include "src/mtl/Sort.h"
-#include "src/simp/SimpSolver.h"
 #include "src/utils/System.h"
+#include "src/utils/Options.h" // Include Options.h
+#include "src/core/Solver.h"
+#include "src/simp/SimpSolver.h"
 
 using namespace Minisat;
 

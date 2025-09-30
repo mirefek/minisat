@@ -315,6 +315,33 @@ src/simp/SimpSolver.cc.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/minisat-lib-shared.dir/build.make CMakeFiles/minisat-lib-shared.dir/src/simp/SimpSolver.cc.s
 .PHONY : src/simp/SimpSolver.cc.s
 
+src/utils/ExternalWatcher.o: src/utils/ExternalWatcher.cc.o
+.PHONY : src/utils/ExternalWatcher.o
+
+# target to build an object file
+src/utils/ExternalWatcher.cc.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/minisat-lib-static.dir/build.make CMakeFiles/minisat-lib-static.dir/src/utils/ExternalWatcher.cc.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/minisat-lib-shared.dir/build.make CMakeFiles/minisat-lib-shared.dir/src/utils/ExternalWatcher.cc.o
+.PHONY : src/utils/ExternalWatcher.cc.o
+
+src/utils/ExternalWatcher.i: src/utils/ExternalWatcher.cc.i
+.PHONY : src/utils/ExternalWatcher.i
+
+# target to preprocess a source file
+src/utils/ExternalWatcher.cc.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/minisat-lib-static.dir/build.make CMakeFiles/minisat-lib-static.dir/src/utils/ExternalWatcher.cc.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/minisat-lib-shared.dir/build.make CMakeFiles/minisat-lib-shared.dir/src/utils/ExternalWatcher.cc.i
+.PHONY : src/utils/ExternalWatcher.cc.i
+
+src/utils/ExternalWatcher.s: src/utils/ExternalWatcher.cc.s
+.PHONY : src/utils/ExternalWatcher.s
+
+# target to generate assembly for a file
+src/utils/ExternalWatcher.cc.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/minisat-lib-static.dir/build.make CMakeFiles/minisat-lib-static.dir/src/utils/ExternalWatcher.cc.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/minisat-lib-shared.dir/build.make CMakeFiles/minisat-lib-shared.dir/src/utils/ExternalWatcher.cc.s
+.PHONY : src/utils/ExternalWatcher.cc.s
+
 src/utils/Options.o: src/utils/Options.cc.o
 .PHONY : src/utils/Options.o
 
@@ -397,6 +424,9 @@ help:
 	@echo "... src/simp/SimpSolver.o"
 	@echo "... src/simp/SimpSolver.i"
 	@echo "... src/simp/SimpSolver.s"
+	@echo "... src/utils/ExternalWatcher.o"
+	@echo "... src/utils/ExternalWatcher.i"
+	@echo "... src/utils/ExternalWatcher.s"
 	@echo "... src/utils/Options.o"
 	@echo "... src/utils/Options.i"
 	@echo "... src/utils/Options.s"

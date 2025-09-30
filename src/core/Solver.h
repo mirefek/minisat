@@ -23,10 +23,9 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 #include "src/mtl/Vec.h"
 #include "src/mtl/Heap.h"
-#include "src/mtl/Alg.h"
 #include "src/mtl/IntMap.h"
-#include "src/utils/Options.h"
 #include "src/core/SolverTypes.h"
+#include "src/utils/ExternalWatcher.h" // Include the new header
 
 
 namespace Minisat {
@@ -150,6 +149,8 @@ public:
     //
     uint64_t solves, starts, decisions, rnd_decisions, propagations, conflicts;
     uint64_t dec_vars, num_clauses, num_learnts, clauses_literals, learnts_literals, max_literals, tot_literals;
+
+    ExternalWatcher* external_watcher; // New member for external watcher
 
 protected:
 

@@ -28,6 +28,18 @@ set(MINISAT_SOVERSION ${MINISAT_SOMAJOR})
 # Dependencies:
 
 find_package(ZLIB)
+# Find JsonCpp manually since find_package failed
+find_path(JSONCPP_INCLUDE_DIR json/json.h PATHS /usr/include /usr/local/include)
+find_library(JSONCPP_LIBRARY NAMES jsoncpp PATHS /usr/lib /usr/local/lib)
+
+if (JSONCPP_INCLUDE_DIR AND JSONCPP_LIBRARY)
+    message(STATUS "Found JsonCpp include: ${JSONCPP_INCLUDE_DIR}")
+    message(STATUS "Found JsonCpp library: ${JSONCPP_LIBRARY}")
+    include_directories(${JSONCPP_INCLUDE_DIR})
+else()
+    message(FATAL_ERROR "JsonCpp not found. Please install it or provide its path.")
+endif()
+
 include_directories(${ZLIB_INCLUDE_DIR})
 include_directories(${minisat_SOURCE_DIR})
 
@@ -42,14 +54,15 @@ add_definitions(-D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS)
 set(MINISAT_LIB_SOURCES
     src/utils/Options.cc
     src/utils/System.cc
+    src/utils/ExternalWatcher.cc
     src/core/Solver.cc
     src/simp/SimpSolver.cc)
 
 add_library(minisat-lib-static STATIC ${MINISAT_LIB_SOURCES})
-add_library(minisat-lib-shared SHARED ${MINISAT_LIB_SOURCES})
+target_link_libraries(minisat-lib-static ${ZLIB_LIBRARY} ${JSONCPP_LIBRARY}) # Link JsonCpp
 
-target_link_libraries(minisat-lib-shared ${ZLIB_LIBRARY})
-target_link_libraries(minisat-lib-static ${ZLIB_LIBRARY})
+add_library(minisat-lib-shared SHARED ${MINISAT_LIB_SOURCES})
+target_link_libraries(minisat-lib-shared ${ZLIB_LIBRARY} ${JSONCPP_LIBRARY}) # Link JsonCpp
 
 add_executable(minisat_core src/core/Main.cc)
 add_executable(minisat_simp src/simp/Main.cc)

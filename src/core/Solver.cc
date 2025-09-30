@@ -23,6 +23,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include "src/mtl/Alg.h"
 #include "src/mtl/Sort.h"
 #include "src/utils/System.h"
+#include "src/utils/Options.h" // Re-add this include
 #include "src/core/Solver.h"
 
 using namespace Minisat;
@@ -101,6 +102,7 @@ Solver::Solver() :
   , conflict_budget    (-1)
   , propagation_budget (-1)
   , asynch_interrupt   (false)
+  , external_watcher   (nullptr) // Initialize external_watcher to nullptr
 {}
 
 
@@ -712,6 +714,11 @@ lbool Solver::search(int nof_conflicts)
         if (confl != CRef_Undef){
             // CONFLICT
             conflicts++; conflictC++;
+
+            if (external_watcher) {
+                external_watcher->notifyConflict(confl, trail, trail_lim, learnt_clause);
+            }
+
             if (decisionLevel() == 0) return l_False;
 
             learnt_clause.clear();

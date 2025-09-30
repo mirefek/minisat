@@ -18,14 +18,13 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **************************************************************************************************/
 
-#include <errno.h>
 #include <zlib.h>
 
 #include "src/utils/System.h"
-#include "src/utils/ParseUtils.h"
 #include "src/utils/Options.h"
 #include "src/core/Dimacs.h"
 #include "src/core/Solver.h"
+#include "src/utils/ExternalWatcher.h" // Include the new header
 
 using namespace Minisat;
 
@@ -64,6 +63,7 @@ int main(int argc, char** argv)
         IntOption    cpu_lim("MAIN", "cpu-lim","Limit on CPU time allowed in seconds.\n", 0, IntRange(0, INT32_MAX));
         IntOption    mem_lim("MAIN", "mem-lim","Limit on memory usage in megabytes.\n", 0, IntRange(0, INT32_MAX));
         BoolOption   strictp("MAIN", "strict", "Validate DIMACS header during parsing.", false);
+        StringOption watch_socket("MAIN", "watch-socket", "Path to a Unix socket for external watcher.", NULL);
         
         parseOptions(argc, argv, true);
 
@@ -120,8 +120,20 @@ int main(int argc, char** argv)
             exit(20);
         }
         
+        ExternalWatcher* externalWatcher = nullptr;
+        if (watch_socket.operator const char *() != NULL) {
+            externalWatcher = new ExternalWatcher(&S);
+            S.external_watcher = externalWatcher;
+            externalWatcher->start(watch_socket.operator const char *());
+        }
+
         vec<Lit> dummy;
         lbool ret = S.solveLimited(dummy);
+
+        if (0 && externalWatcher) { // TODO: this function doesn't work
+            externalWatcher->stop();
+            delete externalWatcher;
+        }
         if (S.verbosity > 0){
             S.printStats();
             printf("\n"); }
