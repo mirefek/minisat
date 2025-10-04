@@ -150,7 +150,7 @@ public:
     uint64_t solves, starts, decisions, rnd_decisions, propagations, conflicts;
     uint64_t dec_vars, num_clauses, num_learnts, clauses_literals, learnts_literals, max_literals, tot_literals;
 
-    ExternalWatcher* external_watcher; // New member for external watcher
+    std::unique_ptr<ExternalWatcher> external_watcher; // New member for external watcher
 
 protected:
 
@@ -176,7 +176,8 @@ protected:
 
     struct VarOrderLt {
         const IntMap<Var, double>&  activity;
-        bool operator () (Var x, Var y) const { return activity[x] > activity[y]; }
+        // bool operator () (Var x, Var y) const { return activity[x] > activity[y]; }
+        bool operator () (Var x, Var y) const { return x > y; }
         VarOrderLt(const IntMap<Var, double>&  act) : activity(act) { }
     };
 

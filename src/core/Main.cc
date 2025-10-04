@@ -19,7 +19,9 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 **************************************************************************************************/
 
 #include <zlib.h>
+#include <unistd.h>
 
+#include "src/core/SolverTypes.h"
 #include "src/utils/System.h"
 #include "src/utils/Options.h"
 #include "src/core/Dimacs.h"
@@ -120,20 +122,18 @@ int main(int argc, char** argv)
             exit(20);
         }
         
-        ExternalWatcher* externalWatcher = nullptr;
-        if (watch_socket.operator const char *() != NULL) {
-            externalWatcher = new ExternalWatcher(&S);
-            S.external_watcher = externalWatcher;
-            externalWatcher->start(watch_socket.operator const char *());
+        if ((const char *)watch_socket != NULL) {
+            const char *s1 = watch_socket;
+            const std::string s2 = s1;
+            S.external_watcher = std::make_unique<ExternalWatcher>(s2);
         }
+        for (Var v=0; v < S.nVars(); v++)
+            S.setPolarity(v, l_False);
 
         vec<Lit> dummy;
         lbool ret = S.solveLimited(dummy);
 
-        if (0 && externalWatcher) { // TODO: this function doesn't work
-            externalWatcher->stop();
-            delete externalWatcher;
-        }
+        S.external_watcher = nullptr;
         if (S.verbosity > 0){
             S.printStats();
             printf("\n"); }

@@ -715,14 +715,13 @@ lbool Solver::search(int nof_conflicts)
             // CONFLICT
             conflicts++; conflictC++;
 
-            if (external_watcher) {
-                external_watcher->notifyConflict(confl, trail, trail_lim, learnt_clause);
-            }
-
             if (decisionLevel() == 0) return l_False;
 
             learnt_clause.clear();
             analyze(confl, learnt_clause, backtrack_level);
+            if (external_watcher) {
+                external_watcher->notifyConflict(ca[confl], trail, trail_lim, learnt_clause);
+            }
             cancelUntil(backtrack_level);
 
             if (learnt_clause.size() == 1){

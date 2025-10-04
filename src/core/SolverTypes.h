@@ -24,7 +24,6 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 #include <assert.h>
 
-#include "src/mtl/IntTypes.h"
 #include "src/mtl/Alg.h"
 #include "src/mtl/Vec.h"
 #include "src/mtl/IntMap.h"

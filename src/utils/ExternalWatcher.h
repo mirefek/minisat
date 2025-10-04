@@ -4,10 +4,11 @@
 #include <string>
 #include <thread>
 #include <mutex>
-#include <condition_variable>
+#include <vector>
+#include <sys/un.h>
 
-#include "minisat/mtl/Vec.h"
-#include "minisat/core/SolverTypes.h"
+#include "src/mtl/Vec.h"
+#include "src/core/SolverTypes.h"
 
 namespace Minisat {
 
@@ -16,30 +17,21 @@ class Solver;
 
 class ExternalWatcher {
 public:
-    ExternalWatcher(Solver* solver_ptr);
+    ExternalWatcher(const std::string& socket_path);
     ~ExternalWatcher();
 
-    void start(const std::string& socket_path);
-    void stop();
-    void notifyConflict(CRef confl, const Minisat::vec<Minisat::Lit>& trail, const Minisat::vec<int>& trail_lim, const Minisat::vec<Minisat::Lit>& learnt_clause);
-
+    void notifyConflict(const Clause& confl_clause, const vec<Lit>& trail, const vec<int>& trail_lim, const vec<Lit>& learnt_clause);
 private:
     void                       watcherThread();
-    void                       sendData(int client_socket, CRef confl, const Minisat::vec<Minisat::Lit>& trail, const Minisat::vec<int>& trail_lim, const Minisat::vec<Minisat::Lit>& learnt_clause);
+    std::string                prepareData(const Clause& confl_clause, const vec<Lit>& trail, const vec<int>& trail_lim, const vec<Lit>& learnt_clause);
+    bool                       stopping;
 
-    Solver*                    solver;
     std::string                socket_path;
-    int                        listen_fd;
-    bool                       running;
+    struct sockaddr_un addr;
+    int                        socket_id;
     std::thread                watcher_thread;
     std::mutex                 query_mutex;
-    std::condition_variable    query_cond;
-    bool                       pending_query;
-
-    CRef                        last_confl;
-    Minisat::vec<Minisat::Lit>  last_trail;
-    Minisat::vec<int>           last_trail_lim;
-    Minisat::vec<Minisat::Lit>  last_learnt_clause;
+    std::vector<int>           client_sockets;
 };
 
 } // namespace Minisat

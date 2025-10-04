@@ -9,131 +9,99 @@
 
 namespace Minisat {
 
-ExternalWatcher::ExternalWatcher(Solver* solver_ptr) : 
-    solver(solver_ptr),
-    listen_fd(-1),
-    running(false),
-    pending_query(false),
-    last_confl(CRef_Undef)
+ExternalWatcher::ExternalWatcher(const std::string &socket_path) : 
+    socket_path(socket_path),
+    socket_id(socket(AF_UNIX, SOCK_STREAM, 0)),
+    stopping(false)
 {
-    // Initialize vectors to empty
-    last_trail.clear();
-    last_trail_lim.clear();
-    last_learnt_clause.clear();
-}
-
-ExternalWatcher::~ExternalWatcher() {
-    stop();
-}
-
-void ExternalWatcher::start(const std::string& path) {
-    if (running) {
-        std::cerr << "ExternalWatcher is already running." << std::endl;
-        return;
-    }
-    socket_path = path;
-
-    listen_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (listen_fd < 0) {
+    if (socket_id < 0) {
         perror("socket");
         return;
     }
 
-    struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
     strncpy(addr.sun_path, socket_path.c_str(), sizeof(addr.sun_path) - 1);
 
     unlink(socket_path.c_str()); // Remove any old socket file
 
-    if (bind(listen_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+    if (bind(socket_id, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
         perror("bind");
-        close(listen_fd);
+        close(socket_id);
         return;
     }
 
-    if (listen(listen_fd, 5) < 0) { // 5 is the backlog queue size
+    if (listen(socket_id, 5) < 0) { // 5 is the backlog queue size
         perror("listen");
-        close(listen_fd);
+        close(socket_id);
         return;
     }
 
-    running = true;
     watcher_thread = std::thread(&ExternalWatcher::watcherThread, this);
-    std::cout << "ExternalWatcher listening on: " << socket_path << std::endl;
+    std::cout << "ExternalWatcher: listening on " << socket_path << std::endl;
 }
 
-void ExternalWatcher::stop() {
-    if (!running) {
-        return;
-    }
-    running = false;
-    if (listen_fd != -1) {
-        close(listen_fd);
-        listen_fd = -1;
-        unlink(socket_path.c_str());
-    }
-    if (watcher_thread.joinable()) {
-        watcher_thread.join();
-    }
-    std::cout << "ExternalWatcher stopped." << std::endl;
-}
-
-void ExternalWatcher::notifyConflict(CRef confl, const Minisat::vec<Minisat::Lit>& trail, const Minisat::vec<int>& trail_lim, const Minisat::vec<Minisat::Lit>& learnt_clause) {
-    std::unique_lock<std::mutex> lock(query_mutex);
-    if (pending_query) {
-        last_confl = confl;
-        // Deep copy of vectors
-        trail.copyTo(last_trail);
-        trail_lim.copyTo(last_trail_lim);
-        learnt_clause.copyTo(last_learnt_clause);
-        query_cond.notify_one();
-    }
+ExternalWatcher::~ExternalWatcher() {
+    stopping = true;
+    int client_socket = socket(AF_UNIX, SOCK_STREAM, 0);
+    int conn = connect(client_socket, (struct sockaddr*)&addr, sizeof(addr));
+    watcher_thread.join();
+    std::cout << "ExternalWatcher stopped: " << socket_path << std::endl;
 }
 
 void ExternalWatcher::watcherThread() {
-    while (running) {
-        int client_socket = accept(listen_fd, NULL, NULL);
+    for (;;) {
+        int client_socket = accept(socket_id, NULL, NULL);
+        if (stopping) break;
         if (client_socket < 0) {
-            if (running) {
-                perror("accept");
-            }
+            perror("accept");
             continue;
         }
 
-        std::cout << "Watcher: Client connected." << std::endl;
-
         // Wait for a query (any data) from the client
-        char buffer[1];
+        char buffer[10];
         ssize_t bytes_read = recv(client_socket, buffer, sizeof(buffer), 0);
         if (bytes_read > 0) {
             std::unique_lock<std::mutex> lock(query_mutex);
-            pending_query = true;
-            query_cond.wait(lock, [this]{ return !pending_query || !running; }); // Wait until notified or stopped
-
-            if (!running) {
-                close(client_socket);
-                break;
-            }
-            
-            std::cout << "Watcher: Sending data..." << std::endl;
-            sendData(client_socket, last_confl, last_trail, last_trail_lim, last_learnt_clause);
-            std::cout << "Watcher: Data sent." << std::endl;
-            pending_query = false;
-        } else if (bytes_read == 0) {
-            std::cout << "Watcher: Client disconnected normally." << std::endl;
+            client_sockets.push_back(client_socket);
         } else {
             perror("recv");
+            close(client_socket);
         }
-
-        close(client_socket);
     }
+    for (int client_socket : client_sockets)
+        close(client_socket);
+    client_sockets.clear();
+    close(socket_id);
+    unlink(socket_path.c_str());
 }
 
-void ExternalWatcher::sendData(int client_socket, CRef confl, const Minisat::vec<Minisat::Lit>& trail, const Minisat::vec<int>& trail_lim, const Minisat::vec<Minisat::Lit>& learnt_clause) {
+/*
+  Function called to potentialy send a checkpoint of the SAT solver,
+  in case any request has been made.
+*/
+void ExternalWatcher::notifyConflict(const Clause& confl_clause, const vec<Lit>& trail, const vec<int>& trail_lim, const vec<Lit>& learnt_clause) {
+    std::unique_lock<std::mutex> lock(query_mutex);
+    if (client_sockets.empty()) return;
+    std::string message = prepareData(confl_clause, trail, trail_lim, learnt_clause);
+    for (int client_socket : client_sockets) {
+        send(client_socket, message.c_str(), message.length(), 0);
+        close(client_socket);
+    }
+    client_sockets.clear();
+}
+
+/*
+  Take the current state of a SAT solver, and encode into JSON data
+*/
+std::string ExternalWatcher::prepareData(const Clause& confl_clause, const vec<Lit>& trail, const vec<int>& trail_lim, const vec<Lit>& learnt_clause) {
     Json::Value root;
 
-    root["confl"] = (Json::Int64)confl;
+    Json::Value json_confl_clause(Json::arrayValue);
+    for (int i = 0; i < confl_clause.size(); i++) {
+        json_confl_clause.append(toInt(confl_clause[i]));
+    }
+    root["confl_clause"] = json_confl_clause;
 
     Json::Value json_trail(Json::arrayValue);
     for (int i = 0; i < trail.size(); i++) {
@@ -151,11 +119,11 @@ void ExternalWatcher::sendData(int client_socket, CRef confl, const Minisat::vec
     for (int i = 0; i < learnt_clause.size(); i++) {
         json_learnt_clause.append(toInt(learnt_clause[i]));
     }
-    root["learnt_clause"] = json_learnt_clause;
+    root["learned_clause"] = json_learnt_clause;
 
     Json::FastWriter fastWriter;
     std::string message = fastWriter.write(root);
-    send(client_socket, message.c_str(), message.length(), 0);
+    return message;
 }
 
 } // namespace Minisat
