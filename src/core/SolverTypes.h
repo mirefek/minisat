@@ -138,11 +138,12 @@ typedef RegionAllocator<uint32_t>::Ref CRef;
 
 class Clause {
     struct {
-        unsigned mark      : 2;
-        unsigned learnt    : 1;
-        unsigned has_extra : 1;
-        unsigned reloced   : 1;
-        unsigned size      : 27; }                        header;
+        unsigned mark       : 2;
+        unsigned learnt     : 1;
+        unsigned has_extra  : 1;
+        unsigned reloced    : 1;
+        unsigned persistent : 1;
+        unsigned size       : 26; }                        header;
     union { Lit lit; float act; uint32_t abs; CRef rel; } data[0];
 
     friend class ClauseAllocator;
@@ -199,6 +200,10 @@ public:
     uint32_t     mark        ()      const   { return header.mark; }
     void         mark        (uint32_t m)    { header.mark = m; }
     const Lit&   last        ()      const   { return data[header.size-1].lit; }
+
+    void         hold        ()              { header.persistent = 1; }
+    void         release     ()              { header.persistent = 0; }
+    bool         persistent  ()              { return header.persistent; }
 
     bool         reloced     ()      const   { return header.reloced; }
     CRef         relocation  ()      const   { return data[0].rel; }

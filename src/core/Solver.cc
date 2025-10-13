@@ -20,6 +20,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 #include <math.h>
 
+#include "src/core/SolverTypes.h"
 #include "src/mtl/Alg.h"
 #include "src/mtl/Sort.h"
 #include "src/utils/System.h"
@@ -40,10 +41,6 @@ static DoubleOption  opt_random_var_freq   (_cat, "rnd-freq",    "The frequency 
 static DoubleOption  opt_random_seed       (_cat, "rnd-seed",    "Used by the random variable selection",         91648253, DoubleRange(0, false, HUGE_VAL, false));
 static IntOption     opt_ccmin_mode        (_cat, "ccmin-mode",  "Controls conflict clause minimization (0=none, 1=basic, 2=deep)", 2, IntRange(0, 2));
 static IntOption     opt_phase_saving      (_cat, "phase-saving", "Controls the level of phase saving (0=none, 1=limited, 2=full)", 2, IntRange(0, 2));
-static BoolOption    opt_rnd_init_act      (_cat, "rnd-init",    "Randomize the initial activity", false);
-static BoolOption    opt_luby_restart      (_cat, "luby",        "Use the Luby restart sequence", true);
-static IntOption     opt_restart_first     (_cat, "rfirst",      "The base restart interval", 100, IntRange(1, INT32_MAX));
-static DoubleOption  opt_restart_inc       (_cat, "rinc",        "Restart interval increase factor", 2, DoubleRange(1, false, HUGE_VAL, false));
 static DoubleOption  opt_garbage_frac      (_cat, "gc-frac",     "The fraction of wasted memory allowed before a garbage collection is triggered",  0.20, DoubleRange(0, false, HUGE_VAL, false));
 static IntOption     opt_min_learnts_lim   (_cat, "min-learnts", "Minimum learnt clause limit",  0, IntRange(0, INT32_MAX));
 
@@ -61,15 +58,12 @@ Solver::Solver() :
   , clause_decay     (opt_clause_decay)
   , random_var_freq  (opt_random_var_freq)
   , random_seed      (opt_random_seed)
-  , luby_restart     (opt_luby_restart)
   , ccmin_mode       (opt_ccmin_mode)
   , phase_saving     (opt_phase_saving)
   , rnd_pol          (false)
-  , rnd_init_act     (opt_rnd_init_act)
   , garbage_frac     (opt_garbage_frac)
   , min_learnts_lim  (opt_min_learnts_lim)
-  , restart_first    (opt_restart_first)
-  , restart_inc      (opt_restart_inc)
+  , best_clause      (CRef_Undef)
 
     // Parameters (the rest):
     //
@@ -86,7 +80,7 @@ Solver::Solver() :
   , dec_vars(0), num_clauses(0), num_learnts(0), clauses_literals(0), learnts_literals(0), max_literals(0), tot_literals(0)
 
   , watches            (WatcherDeleted(ca))
-  , order_heap         (VarOrderLt(activity))
+  , order_heap         (VarOrderLt(user_prec))
   , ok                 (true)
   , cla_inc            (1)
   , var_inc            (1)
@@ -102,7 +96,7 @@ Solver::Solver() :
   , conflict_budget    (-1)
   , propagation_budget (-1)
   , asynch_interrupt   (false)
-  , external_watcher   (nullptr) // Initialize external_watcher to nullptr
+  , external_watcher   (nullptr)
 {}
 
 
@@ -131,7 +125,8 @@ Var Solver::newVar(lbool upol, bool dvar)
     watches  .init(mkLit(v, true ));
     assigns  .insert(v, l_Undef);
     vardata  .insert(v, mkVarData(CRef_Undef, 0));
-    activity .insert(v, rnd_init_act ? drand(random_seed) * 0.00001 : 0);
+    activity .insert(v, 0);
+    user_prec.insert(v, v);
     seen     .insert(v, 0);
     polarity .insert(v, true);
     user_pol .insert(v, upol);
@@ -586,11 +581,13 @@ void Solver::reduceDB()
     double  extra_lim = cla_inc / learnts.size();    // Remove any clause below this activity
 
     sort(learnts, reduceDB_lt(ca));
-    // Don't delete binary or locked clauses. From the rest, delete clauses from the first half
+    // Don't delete binary, locked or persistent clauses.
+    // From the rest, delete clauses from the first half
     // and clauses with activity smaller than 'extra_lim':
     for (i = j = 0; i < learnts.size(); i++){
         Clause& c = ca[learnts[i]];
-        if (c.size() > 2 && !locked(c) && (i < learnts.size() / 2 || c.activity() < extra_lim))
+        if (c.size() > 2 && !c.persistent() && !locked(c) &&
+                (i < learnts.size() / 2 || c.activity() < extra_lim))
             removeClause(learnts[i]);
         else
             learnts[j++] = learnts[i];
@@ -701,13 +698,14 @@ bool Solver::simplify()
 |    all variables are decision variables, this means that the clause set is satisfiable. 'l_False'
 |    if the clause set is unsatisfiable. 'l_Undef' if the bound on number of conflicts is reached.
 |________________________________________________________________________________________________@*/
-lbool Solver::search(int nof_conflicts)
-{
+lbool Solver::search(int curr_restarts) {
     assert(ok);
     int         backtrack_level;
     int         conflictC = 0;
     vec<Lit>    learnt_clause;
     starts++;
+    int best_level;
+    best_clause = CRef_Undef;
 
     for (;;){
         CRef confl = propagate();
@@ -719,9 +717,8 @@ lbool Solver::search(int nof_conflicts)
 
             learnt_clause.clear();
             analyze(confl, learnt_clause, backtrack_level);
-            if (external_watcher) {
-                external_watcher->notifyConflict(ca[confl], trail, trail_lim, learnt_clause);
-            }
+            if (external_watcher)
+                external_watcher->notifyConflict(confl, learnt_clause);
             cancelUntil(backtrack_level);
 
             if (learnt_clause.size() == 1){
@@ -732,6 +729,14 @@ lbool Solver::search(int nof_conflicts)
                 attachClause(cr);
                 claBumpActivity(ca[cr]);
                 uncheckedEnqueue(learnt_clause[0], cr);
+
+                // keep the highest learned clause
+                if (best_clause == CRef_Undef || best_level > backtrack_level) {
+                    if (best_clause != CRef_Undef) ca[best_clause].release();
+                    best_clause = cr;
+                    ca[best_clause].hold();
+                    best_level = backtrack_level;
+                }
             }
 
             varDecayActivity();
@@ -750,8 +755,13 @@ lbool Solver::search(int nof_conflicts)
             }
 
         }else{
+
+            bool should_restart = false;
+            if (external_watcher)
+                should_restart = external_watcher->notifyDecision();
+
             // NO CONFLICT
-            if ((nof_conflicts >= 0 && conflictC >= nof_conflicts) || !withinBudget()){
+            if (should_restart || !withinBudget()){
                 // Reached bound on number of conflicts:
                 progress_estimate = progressEstimate();
                 cancelUntil(0);
@@ -868,8 +878,7 @@ lbool Solver::solve_()
     // Search:
     int curr_restarts = 0;
     while (status == l_Undef){
-        double rest_base = luby_restart ? luby(restart_inc, curr_restarts) : pow(restart_inc, curr_restarts);
-        status = search(rest_base * restart_first);
+        status = search(curr_restarts);
         if (!withinBudget()) break;
         curr_restarts++;
     }
@@ -1055,6 +1064,9 @@ void Solver::relocAll(ClauseAllocator& to)
             clauses[j++] = clauses[i];
         }
     clauses.shrink(i - j);
+
+    // Relocate best_clause if it's set
+    if (best_clause != CRef_Undef) ca.reloc(best_clause, to);  
 }
 
 

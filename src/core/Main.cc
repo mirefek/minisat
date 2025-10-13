@@ -125,10 +125,9 @@ int main(int argc, char** argv)
         if ((const char *)watch_socket != NULL) {
             const char *s1 = watch_socket;
             const std::string s2 = s1;
-            S.external_watcher = std::make_unique<ExternalWatcher>(s2);
+            S.external_watcher = std::make_unique<ExternalWatcher>(S, s2);
+            // S.external_watcher->loadFileInstruction("/home/mirek/tmp/minisat-def.json");
         }
-        for (Var v=0; v < S.nVars(); v++)
-            S.setPolarity(v, l_False);
 
         vec<Lit> dummy;
         lbool ret = S.solveLimited(dummy);

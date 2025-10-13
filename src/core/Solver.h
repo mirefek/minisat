@@ -129,7 +129,6 @@ public:
     double    clause_decay;
     double    random_var_freq;
     double    random_seed;
-    bool      luby_restart;
     int       ccmin_mode;         // Controls conflict clause minimization (0=none, 1=basic, 2=deep).
     int       phase_saving;       // Controls the level of phase saving (0=none, 1=limited, 2=full).
     bool      rnd_pol;            // Use random polarities for branching heuristics.
@@ -137,8 +136,6 @@ public:
     double    garbage_frac;       // The fraction of wasted memory allowed before a garbage collection is triggered.
     int       min_learnts_lim;    // Minimum number to set the learnts limit to.
 
-    int       restart_first;      // The initial restart limit.                                                                (default 100)
-    double    restart_inc;        // The factor with which the restart limit is multiplied in each restart.                    (default 1.5)
     double    learntsize_factor;  // The intitial limit for learnt clauses is a factor of the original clauses.                (default 1 / 3)
     double    learntsize_inc;     // The limit for learnt clauses is multiplied with this factor each restart.                 (default 1.1)
 
@@ -175,10 +172,9 @@ protected:
     };
 
     struct VarOrderLt {
-        const IntMap<Var, double>&  activity;
-        // bool operator () (Var x, Var y) const { return activity[x] > activity[y]; }
-        bool operator () (Var x, Var y) const { return x > y; }
-        VarOrderLt(const IntMap<Var, double>&  act) : activity(act) { }
+        const IntMap<Var, int>&  user_prec;
+        bool operator () (Var x, Var y) const { return user_prec[x] > user_prec[y]; }
+        VarOrderLt(const IntMap<Var, int>&  prec) : user_prec(prec) { }
     };
 
     struct ShrinkStackElem {
@@ -199,6 +195,7 @@ protected:
     VMap<lbool>         assigns;          // The current assignments.
     VMap<char>          polarity;         // The preferred polarity of each variable.
     VMap<lbool>         user_pol;         // The users preferred polarity of each variable.
+    VMap<int>           user_prec;        // The users preferred precedence of the variables.
     VMap<char>          decision;         // Declares if a variable is eligible for selection in the decision heuristic.
     VMap<VarData>       vardata;          // Stores reason and level for each variable.
     OccLists<Lit, vec<Watcher>, WatcherDeleted, MkIndexLit>
@@ -219,6 +216,7 @@ protected:
 
     vec<Var>            released_vars;
     vec<Var>            free_vars;
+    CRef                best_clause;  // Best clause during single start, to be preserved
 
     // Temporaries (to reduce allocation overhead). Each variable is prefixed by the method in which it is
     // used, exept 'seen' wich is used in several places.
@@ -250,7 +248,7 @@ protected:
     void     analyze          (CRef confl, vec<Lit>& out_learnt, int& out_btlevel);    // (bt = backtrack)
     void     analyzeFinal     (Lit p, LSet& out_conflict);                             // COULD THIS BE IMPLEMENTED BY THE ORDINARIY "analyze" BY SOME REASONABLE GENERALIZATION?
     bool     litRedundant     (Lit p);                                                 // (helper method for 'analyze()')
-    lbool    search           (int nof_conflicts);                                     // Search for a given number of conflicts.
+    lbool    search           (int curr_restarts);                                                      // Search until a restart
     lbool    solve_           ();                                                      // Main solve method (assumptions given in 'assumptions').
     void     reduceDB         ();                                                      // Reduce the set of learnt clauses.
     void     removeSatisfied  (vec<CRef>& cs);                                         // Shrink 'cs' to contain only non-satisfied clauses.
@@ -296,6 +294,8 @@ protected:
     // Returns a random integer 0 <= x < size. Seed must never be 0.
     static inline int irand(double& seed, int size) {
         return (int)(drand(seed) * size); }
+
+    friend class ExternalWatcher;
 };
 
 
@@ -315,11 +315,7 @@ inline void Solver::varBumpActivity(Var v, double inc) {
         // Rescale:
         for (int i = 0; i < nVars(); i++)
             activity[i] *= 1e-100;
-        var_inc *= 1e-100; }
-
-    // Update order_heap with respect to new activity:
-    if (order_heap.inHeap(v))
-        order_heap.decrease(v); }
+        var_inc *= 1e-100; } }
 
 inline void Solver::claDecayActivity() { cla_inc *= (1 / clause_decay); }
 inline void Solver::claBumpActivity (Clause& c) {
